@@ -1,0 +1,893 @@
+---
+title: "Hospital Workers Report"
+author: "CSH"
+date: "August 08, 2019 to September 08, 2019"
+output:
+  html_document:
+    df_print: paged
+    theme: spacelab
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r instructionsForAarsh, warning = FALSE}
+## Instructions for Running the file:
+
+# 1. Update the metadata: change "date" to the date/date range for which you want to generate a # # # #    report. 
+# Also, update the title of the markdown appropriately given who you are genereating this report for (IDI, Datamation, etc).
+# 2. Download the latest Enrollment Survey dataset
+# 3. Update all the 'sourced' helper files with the enrollment survey dataset downloaded in # point '1'.
+# 4. Update the block named "dateInput" to be the date/date range for which you would like to generate #    a report. Update the variables, 'dateInput', 'date_ll', 'date_ul'.
+# 5. Update the "surveyRunningTimeSummary" block code, for 'str_detect' part in which we   #    need to specify the month as a number. This need to be changed every month. Also,  
+#    update the threshold i.e. the number of surveys less than 'x' minutes in the length. 
+#      We can update 'x' as of now, it is 10 minutes.
+#
+# 6. Update Survey Running time threshold: block name is # # # # # # ############### # ### ### "surveyRunningTimeSetThreshold".
+# 7. Update (if neeeded) "errorRateThreshold" in the vaccination card checks section.
+# 8. Download the latest audio audits and vaccination card back checks file.
+# 9. Make sure that the .Rmd file has the right vaccination card check sheet and the audio audit sheet inputted in the read_csv() function, which corresponds to the "teamName". For this look into the block called: 'inputBackCheckFileNames'.
+# 10. For the audio audits code sometimes Google Sheets/Survey CTO data explorer messes up # # the date format, so in the block named "audioAuditsBackChecksSummarySetup" update the # # # lubridate fiunction (ymd_hms, mdy_hm, etc) to be of the same format as the format of the # date column in the audio audits back check file
+# 11. Update 'teamName' in the "teamDecide" block.
+# 12. Check for updates in the scto variable named 'member_name' until sign up form is cleaned up. Given there are updates, change the teamMembers variable accordingly, and then run the code. Also, update the "helper.R" file's, 'getPartnerTeam' function after going through the member names and seeing if some new names are added.
+# 14. If the input files for the vaccination card back checks and audio audits have changes, edit their names in 'inputBackCheckFileNames' code block.
+# 15. After this, source the "generalReportScript.Rmd" file.
+```
+
+
+&nbsp;
+
+&nbsp;
+
+
+```{r sourceHelperFiles, warning=FALSE, include=FALSE}
+
+# libraries 
+library(tidyverse)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(expss)
+
+# helper files 
+source("checks.R")
+source("helper.R")
+```
+
+```{r teamDecide, warning = FALSE}
+
+# team name can be one of: "IDI", "Datamation", "HospitalWorkers", "unknown", "d2dinhouse"
+teamName <- "HospitalWorkers" 
+teamMembers <- getPartnerTeam(teamName)
+```
+
+
+```{r dateInput, warning = FALSE}
+dateInput <- "2019-08-08"
+
+# date range vector for which the report is to be generated
+date_ll <- "2019-08-05"
+date_ul <- "2019-08-31"
+tmp_getDateRange <- lubridate::date(date_ll) : lubridate::date(date_ul)
+tmp_getDateRange <- lubridate::as_date(tmp_getDateRange)
+dateRange <- tmp_getDateRange # we can use just this for both single day reports and date range
+dateRange <- as.character(dateRange)
+```
+
+```{r inputBackCheckFileNames, warning =  FALSE}
+# File names for Google Sheets used in the vaccination card back checks and audio audits # # back checks sheet for each organization. If there are changes in  file names, change the file names in this block and then move ahead.
+
+# 1. IDI
+#    1.1 Aud Audits: "v1 Audio Audits D2D Partners Survey IDI Pilot - v3 audio audits.csv"
+#    1.2 Vacc Cards: "v1 Vaccination Card Photo Review D2D Partners IDI Pilot - Vaccination Card.csv"
+#
+# 2. d2d in house:
+#    2.1 Aud Audits: "v1 Audio Audits d2d in house team - v3 audio audits.csv"
+#    2.2 Vacc Cards: "v1 Vaccination Card Photo Review d2d in house team - Vaccination Card.csv"
+
+# 3. hospital workers:
+#    3.1 Aud Audits: "v1 Audio Audits Hospital Workers - v3 audio audits.csv"
+#    3.2 Vacc Cards: "v1 Vaccination Card Photo Review Hospital Workers - Vaccination Card.csv"
+
+# 4. Datamation
+#    4.1 Aud Audits: "v1 Audio Audits datamation - v3 audio audits.csv"
+#    4.2 Vacc Cards: "v1 Vaccination Card Photo Review datamation - Vaccination Card.csv"
+
+
+
+# save the file names corresponding to the value of the variable "teamName", that is set in the teamDecide block
+audAudBackCheckFileName <- "v1 Audio Audits d2d in house team - v3 audio audits.csv"
+vaccCardBackCheckFileName <- "v1 Vaccination Card Photo Review d2d in house team - Vaccination Card.csv"
+
+```
+
+
+## Productivity Checks
+
+&nbsp;
+
+#### Total Number of surveys done by each surveyor from `r date_ll` to `r date_ul`
+
+&nbsp;
+
+This graph displays the number of surveys done by each surveyor from `r date_ll` to `r date_ul`
+
+```{r numSurveysPerSurveyorOverAPeriodOfTime, warning =  FALSE}
+
+# getting data for the date range set above
+db_ds_wide_expand_date_range <- filter(ds_wide_expand, dateOnly %in% dateRange)
+# db_indexes_date_sd <- str_detect(ds_wide_expand$SubmissionDate, as.character(dateInput))
+# db_ds_wide_expand_sd <- ds_wide_expand[db_indexes_date_sd, ]
+db_ds_wide_expand_date_range <- arrange(db_ds_wide_expand_date_range, member_name)
+
+# further filtering data to only include teamMembers correponding to the current teamName
+db_ds_wide_expand_date_range <- filter(db_ds_wide_expand_date_range, member_name %in% teamMembers)
+
+# setting x axis breaks
+breaks_daily <- c(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50)
+breaks_weekly <- c(0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260)
+breaks_monthly <- c(0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260)
+
+breaks_longer <- c(0, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480, 520)
+
+# creating the plot for the number of surveys completed in the date range set above, by the team members belonging to "teamName"
+db_daily_t1_g1 <- ggplot(db_ds_wide_expand_date_range, mapping = aes(x = member_name)) + geom_histogram(stat = "count") + coord_flip() + ggtitle(str_c("Number of Surveys done from:", as.character(date_ll), "to", as.character(date_ul), sep = " ")) + scale_y_continuous(breaks = breaks_longer) + geom_text(aes(label=..count..), stat="count", vjust= 0.5, hjust = 2, size= 5)
+
+db_daily_t1_g1
+
+```
+
+&nbsp;
+
+#### Average number of surveys per surveyor per day (date range: `r date_ll` to `r date_ul`)
+
+&nbsp
+
+This graph displays the average number of surveys done by each surveyor in a day.
+
+```{r avgNumOfSurveysPerDay}
+
+# after inputting the number of days in the "days_time_period" variable, this block of code calculates the average number of surveys done by each surveyor. This assumes total number of days worked for everyone is the same across all surveyors.
+db_ds_wide_expand_date_range_grp <- group_by(db_ds_wide_expand_date_range, member_name)
+days_time_period <- 7
+db_ds_wide_expand_date_range_summary <- dplyr::summarise(db_ds_wide_expand_date_range_grp, avgNumSurv = round(n()/days_time_period))
+
+ggplot(db_ds_wide_expand_date_range_summary, mapping = aes(x = member_name, y = avgNumSurv)) + geom_bar(stat = "identity") + coord_flip() + geom_text(mapping = aes(label = avgNumSurv), vjust= 0.5, hjust = 2, size= 5)
+                                                         
+```
+
+
+
+#### Average duration of surveys per surveyor from `r date_ll` to `r date_ul`
+
+&nbsp;
+
+This graph displays the average time taken (in minutes) by the surveyor to complete a survey, in the surveys done from `r date_ll` to `r date_ul`
+
+```{r avgTimePerSurBySurveyorPerDay}
+
+# In the given date range what on average how long does it take for a surveyor to administer a survey.
+db_ds_wide_expand_date_range_grp <- group_by(db_ds_wide_expand_date_range, member_name)
+db_ds_wide_expand_date_range_summ <- dplyr::summarise(db_ds_wide_expand_date_range_grp, durOfSurvPerSurveyor = mean(durationOfSurveyInMinutes, na.rm = TRUE))
+
+db_ds_wide_expand_date_range_summ <- filter(db_ds_wide_expand_date_range_summ, member_name %in% teamMembers)
+
+    db_daily_t1_g4 <- ggplot(db_ds_wide_expand_date_range_summ, mapping = aes(x = member_name, y = durOfSurvPerSurveyor)) + geom_bar(stat = "identity") + coord_flip() + scale_y_continuous(breaks = seq(1, 50, by = 2.5)) + ggtitle(str_c("Average Survey duration in the following time period ", as.character(date_ll), "to", as.character(date_ul), sep = " ")) + geom_text(aes(label = round(durOfSurvPerSurveyor)), vjust= 0.5, hjust = 2, size= 5) + ylab("duration (in minutes)")
+db_daily_t1_g4
+
+```
+
+&nbsp;
+
+***
+
+&nbsp;
+
+## Survey Running Time Stats:
+
+```{r surveyRunningTimeSetThreshold}
+# this is needed for counting total number of surveys that are less than a given "threshold" minutes.
+threshold <- 10
+```
+
+&nbsp;
+
+#### For each surveyor, what percent of surveys were less than `r threshold` minutes in the following date range `r date_ll` to `r date_ul`. In the table, replace 'x' with `r threshold`.
+
+```{r surveyRunningTimeSummary, warning = FALSE} 
+wideData <- read.csv("Enrollment survey D2D partners 20190223_WIDE.csv")
+wideData <- as_tibble(wideData)
+
+
+# adding a duration of survey data column
+wideData$SubmissionDate <- lubridate::mdy_hms(wideData$SubmissionDate)
+wideData$starttime <- lubridate::mdy_hms(wideData$starttime)
+wideData$endtime <- lubridate::mdy_hms(wideData$endtime)
+
+wideData <- wideData %>% mutate(durationOfSurveyInMinutes = interval(endtime, starttime))
+wideData$durationOfSurveyInMinutes <- as.duration(wideData$durationOfSurveyInMinutes)
+wideData$durationOfSurveyInMinutes <- (abs(as.numeric(wideData$durationOfSurveyInMinutes)))/60
+
+# adding a date only column
+# wideData <- wideData %>% mutate(dateOnly = str_extract(SubmissionDate, "....-..-.."))
+
+# choosing only those in which total # of cg = 1--
+# wideData <- filter(wideData, caregiver_count == 1)
+
+wideDataSS <- select(wideData, SubmissionDate, starttime, endtime, member_name, complete_audio_audit, durationOfSurveyInMinutes)
+
+# Option 1: getting today's audio files--
+date <- "2019-03-13"
+indexes_date <- str_detect(wideDataSS$SubmissionDate, date)
+wideDataSS_sD <- wideDataSS[indexes_date, ]
+
+# Option 2: getting audio files for a Date Range
+# 'dateRange': this is the variable that we have for setting date ranges. This can be found in the 'dateInput' block.
+
+dateRangeStatic <- c(dateInput)
+
+wideDataSS_dR <- mutate(wideDataSS, relDateRangeOnly = str_extract(
+  SubmissionDate, "(....-..-..)|(....-..-.)"))
+
+wideDataSS_dR <- filter(wideDataSS_dR, !(is.na(relDateRangeOnly)))
+wideDataSS_dR <- filter(wideDataSS_dR, relDateRangeOnly %in% dateRange)
+
+# furhter filtering out those rows in which duration of survey is less than trhe set threshold--
+wideDataSS_dR <- arrange(wideDataSS_dR, member_name)
+wideDataSS_dR_lessthanx <- filter(wideDataSS_dR, durationOfSurveyInMinutes < threshold)
+
+# summarizing information
+wideDataSS_dR_sum <- dplyr::group_by(wideDataSS_dR, member_name)
+wideDataSS_dR_sum <- dplyr::summarize(wideDataSS_dR_sum, countTot = n())
+
+wideDataSS_dR_lessthanx_sum <- dplyr::group_by(wideDataSS_dR_lessthanx, member_name)
+wideDataSS_dR_lessthanx_sum <- dplyr::summarize(wideDataSS_dR_lessthanx_sum, countLessThanx = n())
+
+# joining 2 summary tables from above
+summaryTableDuration <- left_join(wideDataSS_dR_sum, wideDataSS_dR_lessthanx_sum, by = "member_name")
+summaryTableDuration <- mutate(summaryTableDuration, percentageLessThanxminutes = round((countLessThanx/countTot)*100))
+
+# adding a static timeline column
+summaryTableDuration <- mutate(summaryTableDuration, timeline = dateRangeStatic)
+summaryTableDuration <- select(summaryTableDuration, timeline, everything())
+# write.csv(summaryTableDuration, "audioAuditOutputFiles/audioAuditDurationOfSurveySummary_20190518.csv")
+
+# write.csv(wideDataSS_dR_lessthan5, "Mr1.csv")
+
+# renaming columns of 'summaryTableDuration' for better understanding---------
+colnames(summaryTableDuration) <- c("Date", "SurveyorName", "TotalSurveys", "NumberSurveysLessThanXMinutes", "%SurveysLessThanXMinutes")
+
+summaryTableDuration <- filter(summaryTableDuration, SurveyorName %in% teamMembers)
+summaryTableDuration <- select(summaryTableDuration, "SurveyorName", "TotalSurveys", "NumberSurveysLessThanXMinutes", "%SurveysLessThanXMinutes")
+
+colNumberThree <- str_c("NumberSurveysLessThan", threshold, "Minutes", sep = "")
+colNumberFour <- str_c("%SurveysLessThan", threshold, "Minutes", sep = "")
+colnames(summaryTableDuration)[3:4] <- c(colNumberThree, colNumberFour)
+if(dim(summaryTableDuration)[1] != 0){
+  knitr::kable(summaryTableDuration)
+} else {
+  dummy_reuse <- 1
+}
+# ggplot(summaryTableDuration) + geom_bar(mapping = aes(x = SurveyorName, y =  #summaryTableDuration$`%SurveysLessThanXMinutes`), stat = "identity") + coord_flip()
+
+```
+
+
+&nbsp;
+
+***
+
+&nbsp;
+
+## Audio Audit Back Checks Summary
+
+&nbsp;
+
+```{r audioAuditsBackChecksSummarySetup, warning = FALSE, include = FALSE}
+# read Audio audit data----------
+# actual file name: v1 Audio Audits D2D Partners Survey IDI Pilot - v3 audio audits.csv
+audioAuditData <- readr::read_csv(audAudBackCheckFileName)
+# audioAuditData <- readxl::read_xlsx("v1 Audio Audits D2D Partners Survey.xlsx")
+
+# cleaning data-------------
+audioAuditDataClean <- audioAuditData[(9:nrow(audioAuditData)), ]
+colnames(audioAuditDataClean) <- as.character(audioAuditDataClean[1, ])
+audioAuditDataClean <- audioAuditDataClean[(3:nrow(audioAuditDataClean)), ]
+
+audioAuditDataClean[, "Submission Date"]$`Submission Date` <- lubridate::dmy_hm(audioAuditDataClean[, "Submission Date"]$`Submission Date`)
+
+audioAuditDataClean[, "Submission Date"]$`Submission Date` <- str_extract(audioAuditDataClean[, "Submission Date"]$`Submission Date`, "....-..-..")
+
+audioAuditDataClean <- filter(audioAuditDataClean, `Submission Date` %in% dateRange)
+# View(audioAuditDataClean[!is.na(audioAuditDataClean), ])
+
+# relevant columns to be backchecked:
+relCol <- c("mothers_name", "child1s_name", "fathers_name", "fathers_contact_number", "child1s_dob", "child1_vaccination_card_available")
+
+# create 2 dataframes, one for audio audit data and one for the enrollment survey data. After that compare both.
+relRowsKeys <- select(audioAuditDataClean, "KEY")
+relRowsKeys <- relRowsKeys$KEY
+
+df_enrSur <- filter(ds_wide_expand, KEY %in% relRowsKeys)
+df_enrSur <- select(df_enrSur, KEY, member_name, relCol)  
+df_enrSur <- df_enrSur[!is.na(df_enrSur$KEY), ]
+df_enrSur <- arrange(df_enrSur, KEY)
+
+df_aa <- select(audioAuditDataClean, KEY, "Member Name",  relCol)
+df_aa <- df_aa[!is.na(df_aa$KEY), ]
+df_aa <- arrange(df_aa, KEY)
+
+# Checking % mismatches in father's contact number in both datasets------
+phnNumComp <- (df_aa$fathers_contact_number == df_enrSur$fathers_contact_number)
+
+phNumCompDF <- tibble(phnNumCompRes = phnNumComp, mem_name = df_aa$`Member Name`)
+phNumCompDF_nonNA <- phNumCompDF[!is.na(phNumCompDF$phnNumCompRes), ] 
+phnNumCompDF_nonNA_grp <- dplyr::group_by(phNumCompDF_nonNA, mem_name)
+phnNumCompDF_nonNA_grp_summary <- dplyr::summarise(phnNumCompDF_nonNA_grp, percNumMismatch = (100 - round((mean(phnNumCompRes, na.rm = TRUE)*(100)))), numTimesPhnNumMismatch = (n() - sum(phnNumCompRes, na.rm = TRUE)), n = n())
+
+# phnNumComp_nonNA <- phnNumComp[!is.na(phnNumComp)]
+# (sum(phnNumComp, na.rm = TRUE))/(sum(phnNumComp_nonNA)) # 100% non NA numbers match
+
+
+
+# View(phnNumComp_nonNA)
+
+# Comparing child1s dob in two sections
+ch1DOBIndex_fullDateOnly <- str_detect(df_aa$child1s_dob, "2018|2019") # getting only 'dates'
+ch1DOB_fullDateOnly <- df_aa$child1s_dob[ch1DOBIndex_fullDateOnly]
+
+ch1DOBComp <- (df_aa$child1s_dob[ch1DOBIndex_fullDateOnly] == df_enrSur$child1s_dob[ch1DOBIndex_fullDateOnly])
+
+ch1DOBCompDF <- tibble(audAudCompRes = ch1DOBComp, mem_name = df_aa$`Member Name`[ch1DOBIndex_fullDateOnly])
+ch1DOBCompDF_nonNA <- ch1DOBCompDF[!is.na(ch1DOBCompDF$audAudCompRes), ]
+ch1DOBCompDF_nonNA_grp <- dplyr::group_by(ch1DOBCompDF_nonNA, mem_name)
+ch1DOBCompDF_nonNA_grp_summary <- dplyr::summarise(ch1DOBCompDF_nonNA_grp, percDOBMismatch = (100 - round((mean(audAudCompRes, na.rm = TRUE))*(100))), numTimesDOBMismatch = (n() - sum(audAudCompRes, na.rm = TRUE)), n = n())
+
+
+
+
+# Do not use this block of code===============================================
+
+# Comparing answer to the question of "Vaccination Card Avaialability" in both datasets
+
+# foo_tmp <- df_aa$child1_vaccination_card_available
+# # foo_tmp[43] <- "Section did not come up"
+# # foo_tmp[161] <- "Section did not come up"
+# for(z in 1:length(foo_tmp)){
+#   if(foo_tmp[z] == "No"){
+#     df_aa$child1_vaccination_card_available[z] <- 0
+#   } else if (foo_tmp[z] == "Yes"){
+#     df_aa$child1_vaccination_card_available[z] <- 1
+#   } else {
+#     next
+#   }
+# }
+# 
+# vaccCardAvailComp <- (df_aa$child1_vaccination_card_available== df_enrSur$child1_vaccination_card_available)
+# 
+# vaccCardAvailDF <- tibble(vaccCardAvailCompRes = vaccCardAvailComp, mem_name = df_aa$`Member Name`)
+# vaccCardAvailDF_nonNA <- vaccCardAvailDF[!is.na(vaccCardAvailDF$vaccCardAvailCompRes), ] 
+# vaccCardAvailDF_nonNA_grp <- dplyr::group_by(vaccCardAvailDF_nonNA, mem_name)
+# vaccCardAvailDF_nonNA_grp_summary <- dplyr::summarise(vaccCardAvailDF_nonNA_grp, `%VaccCardAvailMismatch` = (100 - round((mean(vaccCardAvailCompRes, na.rm = TRUE)*(100)))) , numTimesMismatchVaccCardAvail = (n() - sum(vaccCardAvailCompRes, na.rm = TRUE)), n = n())
+
+# sum(ch1DOBComp, na.rm = TRUE) # 100% match in child's dob
+
+# Comparing mother's name-------
+# ch1MothersName <- (df_aa$mothers_name == df_enrSur$mothers_name) 
+# sum(ch1MothersName, na.rm = TRUE) # not useful
+
+# # distribution checks---------
+# ggplot(audioAuditDataClean) + geom_bar(mapping = aes(x = "Asked for Consent", y = ..count../sum(..count..)))
+# ggplot(audioAuditDataClean) + geom_bar(mapping = aes(x = "Asked for Consent Signature", y = ..count../sum(..count..)))
+# ggplot(audioAuditDataClean) + geom_bar(mapping = aes(x = "Respondent Phone Type", y = ..count../sum(..count..)))
+
+# Getting the automatic score and flagging those surveys for which the score is less than a particular threshold
+
+#===========================================================================================
+
+
+
+autoScoreThreshold <- 1.5
+colnames(audioAuditDataClean)[ncol(audioAuditDataClean) - 2] <- "AutomaticScore" 
+audioAuditDataClean[, "AutomaticScore"] <- as.numeric(unlist(audioAuditDataClean[, "AutomaticScore"]))
+dataSubsetAutoScore <- audioAuditDataClean[(audioAuditDataClean$AutomaticScore < 1.5), ]
+colnames(dataSubsetAutoScore)[90] <- "C90"
+dataSubsetAutoScore <- filter(dataSubsetAutoScore, !is.na(KEY)) # look into these surveys
+write.csv(dataSubsetAutoScore, "audioAuditOutputFiles/audioAuditsFlaggedGivenAutomaticScore_20190430.csv")
+
+# For each surveys for what percent of surveys do we find a blank audio recording------- 
+audAudDataGrpBySurv <- dplyr::group_by(audioAuditDataClean, `Member Name`)
+audAudDataSumm <- dplyr::summarise(audAudDataGrpBySurv, count_compBlankSurveys = count_if("Fully blank", "For Audio Auditor: Blank recording?"), perc_compBlankSurveys = count_if("Fully blank", "For Audio Auditor: Blank recording?")/n(), count_partiallyBlankSurveys = count_if("Partially blank", "For Audio Auditor: Blank recording?"), perc_PartiallyBlankSurveys = round((count_if("Partially blank", "For Audio Auditor: Blank recording?")/n())*(100)), numSurveysDone = n())
+```
+
+&nbsp;
+
+####  1. Number of times the phone number entered in the survey does not match from what we listen to in the audio audits
+
+
+
+```{r audAudCheckPhnNumSumm, warning = FALSE}
+
+# updating colnames so that they are more intuitive
+colnames(phnNumCompDF_nonNA_grp_summary) <- c("SurveyorName", "%TimesPhnNumMismatch", "numTimesPhnNumMismatch", "TotalAuditedSurveys")
+
+phnNumCompDF_nonNA_grp_summary <- filter(phnNumCompDF_nonNA_grp_summary, SurveyorName %in% teamMembers)
+
+phnNumCompDF_nonNA_grp_summary <- select(phnNumCompDF_nonNA_grp_summary, "SurveyorName", "numTimesPhnNumMismatch", "TotalAuditedSurveys")
+
+if(dim(phnNumCompDF_nonNA_grp_summary)[1] != 0){
+knitr::kable(phnNumCompDF_nonNA_grp_summary)  
+} else {
+  dummy_reuse <- 1
+}
+```
+&nbsp;
+
+####  2. Number of times DOB entered in the survey does not match with what we listen to in the audio audits.
+
+&nbsp;
+
+```{r audAudCheckChDOBSumm, warning = FALSE}
+colnames(ch1DOBCompDF_nonNA_grp_summary) <- c("SurveyorName", "%TimesDOBMismatch", "numTimesDOBMismatch", "TotalAuditedSurveys")
+
+ch1DOBCompDF_nonNA_grp_summary <- filter(ch1DOBCompDF_nonNA_grp_summary, SurveyorName %in% teamMembers)
+
+ch1DOBCompDF_nonNA_grp_summary <- select(ch1DOBCompDF_nonNA_grp_summary, "SurveyorName", "numTimesDOBMismatch", "TotalAuditedSurveys")
+
+if(dim(ch1DOBCompDF_nonNA_grp_summary)[1] != 0){
+  knitr::kable(ch1DOBCompDF_nonNA_grp_summary)
+} else {
+  dummy_reuse <- 1
+}
+
+```
+
+
+#### 3. % times we find a mismatch in the Vaccination Card Availability Question
+
+<!-- The mismatch here refers to the fact that the answer to the question: "Is the vaccination card available?" (which can be either 'Yes' or 'No') as recorded in the survey while in field is not the same as what we hear in the audio audits. The table below mentions the number of times this mismatch occurs for each surveyor. -->
+
+```{r audAudCheckVaccCardMismatch, warning = FALSE}
+# vaccCardAvailDF_nonNA_grp_summary <- filter(vaccCardAvailDF_nonNA_grp_summary, mem_name %in% teamMembers)
+# 
+# colnames(vaccCardAvailDF_nonNA_grp_summary)[ncol(vaccCardAvailDF_nonNA_grp_summary)] <- "TotalAuditedSurveys"
+# 
+# vaccCardAvailDF_nonNA_grp_summary <- select(vaccCardAvailDF_nonNA_grp_summary, "mem_name", "numTimesMismatchVaccCardAvail", "TotalAuditedSurveys")
+# 
+# if(dim(vaccCardAvailDF_nonNA_grp_summary)[1] != 0){
+#   knitr::kable(vaccCardAvailDF_nonNA_grp_summary)
+# } else {
+#   dummy_reuse <- 1
+# }
+
+```
+&nbsp;
+
+####  4. In the following date range (`r date_ll` to `r date_ul`): **for what number of surveys do we find a blank audio recording**
+
+```{r audAudCheckBlankRecording, warning = FALSE}
+colnames(audAudDataSumm) <- c("SurveyorName", "numberCompBlankSurveys", "%CompBlankSurveys", "numberPartBlankSurveys", "%PartBlankSurveys", "TotalAuditedSurveys")
+
+audAudDataSumm <- filter(audAudDataSumm, SurveyorName %in% teamMembers)
+audAudDataSumm <-  select(audAudDataSumm, "SurveyorName", "numberCompBlankSurveys", "TotalAuditedSurveys")
+
+if(dim(audAudDataSumm)[1] != 0){
+  knitr::kable(audAudDataSumm)  
+} else {
+  dummy_reuse <- 1
+}
+
+
+```
+
+&nbsp;
+
+***
+
+&nbsp;
+
+## Vaccination Card Back Checks summary
+
+
+```{r vaccCardChecksSummarySetup, warning = FALSE, include=FALSE}
+## vaccination card photo back checks----------
+
+# enrollment survey data---------
+# source("checks.R")
+
+# other libraries-------------
+# library(expss) # use the "count_if" function: super helpful
+
+# read in the vaccination card photo Review dataset-----------
+vaccCardPhotoReviewData <- read_csv(vaccCardBackCheckFileName)
+
+# cleaning the vaccination card photo review dataset-----------
+colnames(vaccCardPhotoReviewData)[19:ncol(vaccCardPhotoReviewData)] <- as.character(vaccCardPhotoReviewData[2, (19:ncol(vaccCardPhotoReviewData))]) 
+colnames(vaccCardPhotoReviewData)[ncol(vaccCardPhotoReviewData)] <- "Comments"
+vaccCardPhotoReviewData <- vaccCardPhotoReviewData[(3:nrow(vaccCardPhotoReviewData)), ]
+
+# getting those columns from the enrollment survey dataset for which keys are present in the vacc card photo review data
+enrSurDataSub <- dplyr::filter(ds_wide_expand, KEY %in% (vaccCardPhotoReviewData$uniqID))
+enrSurDataSub_tmp <- dplyr::filter(enrSurDataSub, dateOnly %in% dateRange)
+enrSurDataSub <- dplyr::filter(enrSurDataSub, KEY %in% enrSurDataSub_tmp$KEY) # only for the given date range
+vaccCardPhotoReviewData <- filter(vaccCardPhotoReviewData, uniqID %in% enrSurDataSub_tmp$KEY)
+
+# getting the submission dates (from ds_wide_expand) for the surveys present in the # # #vaccination card dataset----
+
+# vaccCardDataInd <- ds_wide_expand$KEY %in% vaccCardPhotoReviewData[, "uniqID"]$uniqID
+# vaccCardPhotoReviewData$dateOnly <- ds_wide_expand[vaccCardDataInd, "dateOnly"]$dateOnly
+
+# getting the date just for the "dateInput"----
+
+# vaccCardPhotoReviewData <- subset(vaccCardPhotoReviewData, dateOnly == dateInput)
+
+
+# backchecking child1 name and child 1 dob first before getting to vaccinations backchecks---------
+# ch1Name_vacData <- vaccCardPhotoReviewData$`Child Name
+# Enter if: "Is there a child name" == 1`
+# 
+# ch1Name_enrData <- enrSurDataSub$child1s_name
+# sum(ch1Name_vacData == ch1Name_enrData, na.rm = TRUE) # this is not useful as there might be a lot of spelling differences
+
+# 
+# ch1dob_vacData <- vaccCardPhotoReviewData$`Child DOB
+# Enter if:  "Is there a child DOB" == 1`
+# 
+# ch1dob_enrData <- enrSurDataSub$child1s_dob
+# ch1dob_vacData <- lubridate::ymd(ch1dob_vacData)
+# ch1dob_enrData <- lubridate::mdy(ch1dob_enrData)
+# 
+# # given that there is a date present in both datasets, what % of times is there a match b/w the 2 dates
+# percCorrectDOB <- (sum(ch1dob_enrData == ch1dob_vacData, na.rm = TRUE))/sum(!is.na(ch1dob_enrData == ch1dob_vacData)) # 83.64%
+
+# compare child dob---------------
+
+# changing dates to relevant format
+vaccCardPhotoReviewData$`Child 1 DOB` <- mdy(vaccCardPhotoReviewData$`Child 1 DOB`)
+vaccCardPhotoReviewData$`Child DOB
+Enter if:  "Is there a child DOB" == 1` <- ymd(vaccCardPhotoReviewData$`Child DOB
+Enter if:  "Is there a child DOB" == 1`)
+
+# compare enrollment survey child DOB with vaccination card back check child DOB
+vaccCardPhotoReviewData$eqChDOB <- vaccCardPhotoReviewData$`Child 1 DOB` == vaccCardPhotoReviewData$`Child DOB
+Enter if:  "Is there a child DOB" == 1`
+
+# summarising the data compared  in the above comment
+vaccCardPhotoReviewData_grpSurv <- group_by(vaccCardPhotoReviewData, `Surveyor Name`)
+vaccCardPhotoReviewData_summarise <- dplyr::summarise(vaccCardPhotoReviewData_grpSurv, countMismatch = count_if("FALSE", eqChDOB), totalNonNA = (n() - sum(is.na(eqChDOB))), totalRowsIncNA = n())
+vaccCardPhotoReviewData_summarise <- mutate(vaccCardPhotoReviewData_summarise, 
+                                            percentMismatch = countMismatch/totalNonNA)
+write.csv(vaccCardPhotoReviewData_summarise, "chDOBComparisonSummary.csv")
+
+
+# photo quality check by surveyor---------------
+photoQualDataSub <- vaccCardPhotoReviewData[, c("PhotoQuality", "Surveyor Name")]
+photoQualDataSub_grp_survName <- dplyr::group_by(photoQualDataSub, `Surveyor Name`)
+photoQualDataSub_grp_survName_summary <- dplyr::summarise(photoQualDataSub_grp_survName, countBlur = count_if("Blur", PhotoQuality), countClearlyVisible = count_if("Clearly Visible", PhotoQuality), countNotAVaccCardPhoto = count_if("Not a picture of vaccination card",  PhotoQuality), n = n())
+
+photoQualDataSub_grp_survName_summary$percBlur <- round(((photoQualDataSub_grp_survName_summary$countBlur)/(photoQualDataSub_grp_survName_summary$n))*(100))
+
+
+photoQualDataSub_grp_survName_summary$percClearlyVisible <- round(((photoQualDataSub_grp_survName_summary$countClearlyVisible)/(photoQualDataSub_grp_survName_summary$n))*(100))
+
+
+photoQualDataSub_grp_survName_summary$percNotAVaccCardPhoto <- round(((photoQualDataSub_grp_survName_summary$countNotAVaccCardPhoto)/(photoQualDataSub_grp_survName_summary$n))*(100))
+
+
+# removing the dateOnly columns from the 'vaccCardPhotoReviewData'----
+
+# vaccCardPhotoReviewData <- vaccCardPhotoReviewData[, (1:(ncol(vaccCardPhotoReviewData) - 1))]
+
+# backchecking vaccination data-----------
+
+# getting all the date columns for the vaccinations from the vaccination photo review sheet
+colNamesWithVaccOnly_vaccCardSheet <- str_get(colnames(vaccCardPhotoReviewData), "Clearly Visible")
+vaccCardPhotoReviewData_vaccOnly <- select(vaccCardPhotoReviewData, "uniqID", "Surveyor Name", colNamesWithVaccOnly_vaccCardSheet, `Child 1 DOB`)
+vaccCardPhotoReviewData_vaccOnly <- select(vaccCardPhotoReviewData_vaccOnly, "uniqID", "Surveyor Name", `Child 1 DOB`, "OPV0 Date\nFill if Date Visible == \"Clearly Visible\"", 
+                                           "BCG Date\nFill if Date Visible == \"Clearly Visible\"", "OPV1 Date\nFill if Date Visible == \"Clearly Visible\"", 
+                                           "PENTA1 Date\nFill if Date Visible == \"Clearly Visible\"", "OPV2 Date\nFill if Date Visible == \"Clearly Visible\"",
+                                           "PENTA2 Date\nFill if Date Visible == \"Clearly Visible\"", "OPV3 Date\nFill if Date Visible == \"Clearly Visible\"", 
+                                           "PENTA3 Date\nFill if Date Visible == \"Clearly Visible\"", "MR1 Date\nFill if Date Visible == \"Clearly Visible\"")
+
+# getting all the vaccination date columns from the enrollment survey data sheet
+colNamesWithVaccOnly_enrSur <- str_get(colnames(enrSurDataSub), "child1_date_vacc_card")
+ind_vacc <- !(c(1:length(colNamesWithVaccOnly_enrSur)) %% 2)
+colNamesWithVaccOnly_enrSur <- colNamesWithVaccOnly_enrSur[ind_vacc] 
+enrSurDataSub_vaccOnly <-  select(enrSurDataSub, KEY, member_name, child1s_dob, colNamesWithVaccOnly_enrSur)
+enrSurDataSub_vaccOnly <- enrSurDataSub_vaccOnly[, (1:(ncol(enrSurDataSub_vaccOnly) - 2))]
+
+# changing 'character' date columns to actual date columns for enr sur data----------
+# View(enrSurDataSub_vaccOnly == vaccCardPhotoReviewData_vaccOnly)
+
+# Summarizing information for each vaccine---------
+colnames(enrSurDataSub_vaccOnly)
+colnames(vaccCardPhotoReviewData_vaccOnly)
+# for(i in 3:ncol(enrSurDataSub_vaccOnly)){
+#   enrSurDataSub_vaccOnly[, colnames(enrSurDataSub_vaccOnly)[i]] <- convertToTypeDate(enrSurDataSub_vaccOnly, i, "mdy")
+#   vaccCardPhotoReviewData_vaccOnly[, colnames(vaccCardPhotoReviewData_vaccOnly)[i]] <- convertToTypeDate(vaccCardPhotoReviewData_vaccOnly, i, "mdy")
+# }
+
+
+# enrSurDataSub_vaccOnly[, "child1_date_vacc_card_Penta1"]  <- mdy(unlist(enrSurDataSub_vaccOnly[, "child1_date_vacc_card_Penta1"]))
+# tmpCol <- eval(colnames(enrSurDataSub_vaccOnly)[9])
+# enrSurDataSub_vaccOnly[, tmpCol]  <- mdy(unlist(enrSurDataSub_vaccOnly[, tmpCol]))
+
+
+# converting each date into type "date" using the "mdy" function 
+# doing it first for enrollment survey dataset (because the date is only stored in mdy
+# format in this dataset. For the other dataset, the vaccination card dataset, the 
+# the date is stored in a mixed format, in some columns it is mdy, in others it is 
+# ymd, so it is being dealt in a different loop)----------
+for(i in 1:nrow(enrSurDataSub_vaccOnly)){
+  for(j in 3:ncol(enrSurDataSub_vaccOnly)){
+    enrSurDataSub_vaccOnly[i, j] <- mdy(as.character(enrSurDataSub_vaccOnly[i, j]))
+  }
+}
+
+
+# converting each date into type "date" using the "mdy" function in the vaccination card dataset-----
+
+for(i in 1:nrow(vaccCardPhotoReviewData_vaccOnly)){
+  for(j in 3:ncol(vaccCardPhotoReviewData_vaccOnly)){
+    if(j <= 5){
+      vaccCardPhotoReviewData_vaccOnly[i, j] <- mdy(as.character(vaccCardPhotoReviewData_vaccOnly[i, j]))
+    } else if (j > 5){
+      vaccCardPhotoReviewData_vaccOnly[i, j] <- ymd(as.character(vaccCardPhotoReviewData_vaccOnly[i, j]))
+    }
+  }
+}
+
+# comparing the dates in the 2 datasets-------------------
+
+# # looking only at dob
+# eqDOB <- enrSurDataSub_vaccOnly$child1s_dob == vaccCardPhotoReviewData_vaccOnly$`Child 1 DOB`
+# percDOBMatch <- sum(eqDOB)/length(enrSurDataSub_vaccOnly$child1s_dob) # percent times there is a match
+
+# getting the keys aligned for the 2 datasets before comparing it---------
+enrSurDataSub_vaccOnly <- arrange(enrSurDataSub_vaccOnly, KEY)
+vaccCardPhotoReviewData_vaccOnly <- arrange(vaccCardPhotoReviewData_vaccOnly, uniqID)
+
+# looking at vaccinations only: equating the 2 datasets together and given that there is a date in both the datasets, finding out what %
+# of times do they match?
+eqVacc <- enrSurDataSub_vaccOnly[, (4:ncol(enrSurDataSub_vaccOnly))] == vaccCardPhotoReviewData_vaccOnly[, (4:ncol(vaccCardPhotoReviewData_vaccOnly))]
+eqVacc <- as_tibble(eqVacc) # coercing into a data frame
+
+
+numMatchesGivenBothDatePresent <- apply(eqVacc, 1, function(x) sum(x, na.rm = TRUE))
+totNonNAEntries <- apply(eqVacc, 1, function(x) sum(!is.na(x)))
+percMatchesGivenBothDatePresent <- (numMatchesGivenBothDatePresent)/(totNonNAEntries) 
+
+# getting the number of times there is a date in the vaccination card dataset but not in the enrollment
+# survey dataset.
+
+count_enrSurNAVaccCardNonNA <- 0
+count_vaccCardNAEnrSurNonNA <- 0
+matrix_check_NACountsBwMatrices <- matrix(NA, nrow(enrSurDataSub_vaccOnly), ncol(enrSurDataSub_vaccOnly))
+matrix_check_NACountsBwMatrices <- as_tibble(matrix_check_NACountsBwMatrices)
+for(k in 1:nrow(enrSurDataSub_vaccOnly)){
+  for(l in 4:ncol(enrSurDataSub_vaccOnly)){
+    if(is.na(enrSurDataSub_vaccOnly[k, l]) && !is.na(vaccCardPhotoReviewData_vaccOnly[k, l])){
+      count_enrSurNAVaccCardNonNA <- count_enrSurNAVaccCardNonNA + 1 
+      matrix_check_NACountsBwMatrices[k, l] <- 1
+    } else if(!is.na(enrSurDataSub_vaccOnly[k, l]) && is.na(vaccCardPhotoReviewData_vaccOnly[k, l])){
+      count_vaccCardNAEnrSurNonNA <- count_vaccCardNAEnrSurNonNA + 1
+      matrix_check_NACountsBwMatrices[k, l] <- 0
+    } else{
+      next()
+    }
+  }
+}
+
+numVaccCardNonNAEnrSurNA <- apply(matrix_check_NACountsBwMatrices, 1, function(x) sum(x, na.rm = TRUE))
+numVaccCardNAEnrSurNonNA <- apply(matrix_check_NACountsBwMatrices, 1, function(x) count_if("0", x))
+
+atleastOneDateN <- apply(matrix_check_NACountsBwMatrices, 1, function(x) count_if(c("0", "1"), x))
+
+percVaccCardNonNAEnrSurNA <- numVaccCardNonNAEnrSurNA/atleastOneDateN
+percVaccCardNAEnrSurNonNA <- numVaccCardNAEnrSurNonNA/atleastOneDateN
+
+
+# attaching the new columns in the eqVacc dataset-----------
+eqVacc$numMatchesGivenBothDatePresent <- numMatchesGivenBothDatePresent
+eqVacc$totNonNAEntries <- totNonNAEntries
+eqVacc$percMatchesGivenBothDatePresent <- percMatchesGivenBothDatePresent
+eqVacc$numVaccCardNonNAEnrSurNA <- numVaccCardNonNAEnrSurNA
+eqVacc$numVaccCardNAEnrSurNonNA <- numVaccCardNAEnrSurNonNA
+eqVacc$atleastOneDateN <- atleastOneDateN
+eqVacc$percVaccCardNonNAEnrSurNA <- percVaccCardNonNAEnrSurNA
+eqVacc$percVaccCardNAEnrSurNonNA <- percVaccCardNAEnrSurNonNA
+eqVacc$KEY <- enrSurDataSub_vaccOnly$KEY
+eqVacc$surveyorName <- enrSurDataSub_vaccOnly$member_name
+
+
+# perc matches given there is a date present in both the datasets----------
+eqVacc_nonZeroPerc <- dplyr::filter(eqVacc, percMatchesGivenBothDatePresent != 0)
+mean(eqVacc_nonZeroPerc$percMatchesGivenBothDatePresent) # 94.09% 
+
+# rearranging eqVacc-------
+eqVacc <- select(eqVacc, KEY, surveyorName, everything())
+
+# grouping eqVacc by surveyor--------
+eqVacc_grpBySurv <- group_by(eqVacc, surveyorName)
+eqVacc_bySurvSummary_datePresentInBoth <- dplyr::summarise(eqVacc_grpBySurv, errorRate_bothDatePresent = round((mean(1 - percMatchesGivenBothDatePresent, na.rm = TRUE))*(100)), numSurveysDone = n())
+eqVacc_bySurvSummary_datePresentInVaccCardOnly <- dplyr::summarise(eqVacc_grpBySurv, errorRate_datePresentInVaccCardOnly = round((mean(percVaccCardNonNAEnrSurNA, na.rm = TRUE))*(100)), numSurveysDone = n())
+
+# overall average for eqVacc------------
+eqVacc_datePresentInBoth_overallAverage <- mean((1 - eqVacc$percMatchesGivenBothDatePresent), na.rm = TRUE)
+eqVacc_datePresentInVaccCardOnly_overallAverage <- mean(eqVacc$percVaccCardNonNAEnrSurNA, na.rm = TRUE)
+
+```
+
+&nbsp;
+
+#### 1. Vaccination Card Photo Quality summary by surveyor
+
+```{r vaccCardCheckPhotoQualSumm, warning = FALSE}
+
+# updating colnames so that they are more intuitive
+colnames(photoQualDataSub_grp_survName_summary) <- c("SurveyorName", "countBlur", "countClearlyVisible", "countNotAVaccCardPhoto", "TotalSurveysCompleted", "percBlur", "percClearlyVisible", "percNotAVaccCardPhoto")
+
+photoQualDataSub_grp_survName_summary <- select(photoQualDataSub_grp_survName_summary, "SurveyorName", "countBlur", "countNotAVaccCardPhoto", "percBlur", "percNotAVaccCardPhoto", "TotalSurveysCompleted")
+
+colnames(photoQualDataSub_grp_survName_summary) <- c("SurveyorName", "numberBlurPhotos", "numberNotAVaccCardPhoto", "%Blur", "%NotAVaccCardPhoto", "TotalAuditedSurveys")
+
+photoQualDataSub_grp_survName_summary <- filter(photoQualDataSub_grp_survName_summary, SurveyorName %in% teamMembers)
+
+if(dim(photoQualDataSub_grp_survName_summary)[1] != 0){
+knitr::kable(photoQualDataSub_grp_survName_summary)
+} else {
+  dummy_reuse <- 1
+}
+
+```
+
+&nbsp;
+
+
+#### 2. Vaccination Card Back Checks, error type: Dates incorrectly recorded from the vacc card.
+
+Interpretation: The error referred to here tells that the date that we found in the vaccintation card photo back checks dataset does not match the date that the surveyor recorded from the vaccination card while they were in field. This means that the surveyor saw the date on the card but did not record it correctly.
+
+Below mentioned is a list of surveyors who often made this type of error on `r dateInput`. The error rate is mentioned for each surveyor.
+
+```{r vaccCardCheckErrorRateGivenBothDatePres, warning = FALSE}
+colnames(eqVacc_bySurvSummary_datePresentInBoth) <- c("SurveyorName", "%datesIncorrectlyRecorded", "TotalAuditedSurveys")
+
+eqVacc_bySurvSummary_datePresentInBoth <- filter(eqVacc_bySurvSummary_datePresentInBoth, SurveyorName %in% teamMembers)
+
+if(dim(eqVacc_bySurvSummary_datePresentInBoth)[1] != 0){
+  knitr::kable(eqVacc_bySurvSummary_datePresentInBoth)
+} else {
+  dummy_reuse <- 1
+}
+
+```
+
+
+&nbsp;
+
+<!-- #### 3. Vaccination Card Back Checks, error type: Dates not recorded from the vacc card -->
+
+<!-- Interpretation: The error referred to here simply means that we found a date in the vaccination card photo back check dataset but the surveyor did not record the date from the card while enrolling the mother.  -->
+
+<!-- Below mentioned is a list of surveyors who often made this type of error on `r dateInput`. -->
+
+
+```{r vaccCardCheckErrorRateGivenDateInVaccCardDataOnly, warning = FALSE}
+colnames(eqVacc_bySurvSummary_datePresentInBoth) <- c("SurveyorName", "%datesNotRecordedFromCard", "TotalAuditedSurveys")
+errorRateThreshold <- 30
+eqVacc_bySurvSummary_datePresentInVaccCardOnly_ss_thresh <- filter(eqVacc_bySurvSummary_datePresentInVaccCardOnly, errorRate_datePresentInVaccCardOnly > errorRateThreshold)
+
+eqVacc_bySurvSummary_datePresentInVaccCardOnly_ss_thresh <- filter(eqVacc_bySurvSummary_datePresentInVaccCardOnly_ss_thresh, surveyorName %in% teamMembers)
+
+colnames(eqVacc_bySurvSummary_datePresentInVaccCardOnly_ss_thresh) <- c("SurveyorName", "%datesNotRecordedFromCard", "TotalAuditedSurveys")
+
+# Only display the table if there is data in the table
+if(dim(eqVacc_bySurvSummary_datePresentInVaccCardOnly_ss_thresh)[1] != 0){
+  knitr::kable(eqVacc_bySurvSummary_datePresentInVaccCardOnly_ss_thresh)
+} else {
+  dummy_reuse <- 1
+}
+
+```
+
+```{r otherChecksSummarySetup, warning = FALSE}
+
+# Missing GPS: For each surveyor what percent of times are the GPS coordinates missing
+# "Missing" means that both "Latitude" and "Longitude" are NA-------
+
+dup_ds <- ds_wide_expand
+dup_ds <- subset(dup_ds, dateOnly %in% dateRange)
+dup_ds$bothGPSNA <- is.na(dup_ds$`survey_location_post_consent_sign-Latitude`) & is.na(dup_ds$`survey_location_post_consent_sign-Longitude`) 
+
+gps_col_grp_surveyor <- dplyr::group_by(dup_ds, member_name)
+gps_col_summarise <- dplyr::summarise(gps_col_grp_surveyor, countMissGPSCoord = sum(bothGPSNA), percMissGPSCoord = round((sum(bothGPSNA)/n()) * (100)), numSurveyDone = n())
+# gps_col_summarise
+
+
+# Duplicate phone numbers in the survey by surveyor: fathers contact-----------
+# length(dup_ds$fathers_contact_number) # sanity check
+# length(unique(dup_ds$fathers_contact_number)) # sanity check
+
+dup_phn_num_by_surv_grp_fath <- dplyr::group_by(dup_ds, member_name, fathers_contact_number)
+dup_phn_num_by_surv_summarise_fath <- dplyr::summarise(dup_phn_num_by_surv_grp_fath, count = n())
+
+dup_phn_num_by_surv_summarise_fath_nonNA <- filter(dup_phn_num_by_surv_summarise_fath, !is.na(fathers_contact_number))
+
+dup_phn_num_by_surv_summarise_fath_nonNA <- arrange(dup_phn_num_by_surv_summarise_fath_nonNA, member_name)
+
+dup_phn_num_by_surv_summarise_fath_nonNA$dupSurveys <- (dup_phn_num_by_surv_summarise_fath_nonNA$count - 1)
+
+dup_phn_num_by_surv_summarise_fath_nonNA_grp_mem_name <- dplyr::group_by(dup_phn_num_by_surv_summarise_fath_nonNA, member_name)
+
+dup_phn_num_by_surv_summarise_fath_nonNA_grp_mem_name_summ2 <- dplyr::summarise(dup_phn_num_by_surv_summarise_fath_nonNA_grp_mem_name, percDupPhnNum = round((sum(dupSurveys)/sum(count))*(100)), numSurveysDone = n()) 
+
+```
+
+
+&nbsp;
+
+***
+
+&nbsp;
+
+
+## Other Checks
+
+&nbsp;
+
+#### 1. For what % of the surveys did the surveyor not record the GPS coordinates:
+
+```{r otherChecksGPSSummarySetup, warning = FALSE} 
+colnames(gps_col_summarise) <- c("SurveyorName", "countMissGPSCoord", "%MissGPSCoord", "TotalSurveysCompleted")
+# knitr::kable(gps_col_summarise)
+
+gps_col_summarise <- filter(gps_col_summarise, SurveyorName %in% teamMembers)
+ggplot2::ggplot(data = gps_col_summarise, mapping = aes(x = SurveyorName, y = `%MissGPSCoord`)) + geom_bar(stat = "identity") + geom_text(aes(label=`%MissGPSCoord`), vjust= 0.5, hjust = 2, size= 5) + coord_flip()
+```
+
+
+#### 2. % duplicate phone numbers/surveys (father's phone number) by surveyor:
+
+```{r otherChecksDuplicatePhoneNumbersBreakdown, warning = FALSE} 
+colnames(dup_phn_num_by_surv_summarise_fath_nonNA_grp_mem_name_summ2) <- c("SurveyorName", "%DupPhnNum", "TotalSurveys")
+# knitr::kable(dup_phn_num_by_surv_summarise_fath_nonNA_grp_mem_name_summ2)
+
+dup_phn_num_by_surv_summarise_fath_nonNA_grp_mem_name_summ2 <- filter(dup_phn_num_by_surv_summarise_fath_nonNA_grp_mem_name_summ2, SurveyorName %in% teamMembers)
+
+ggplot2::ggplot(data = dup_phn_num_by_surv_summarise_fath_nonNA_grp_mem_name_summ2, mapping = aes(x = SurveyorName, y = `%DupPhnNum`)) + geom_bar(stat = "identity") + geom_text(aes(label=`%DupPhnNum`), vjust= 0.5, hjust = 2, size= 5) + coord_flip()
+
+
+```
+
+
+#### 3. List of surveyors spending less then 1 minute on advice section
+
+These surveyors are rushing through the advice section of the survey.The supervisor should follow up with the surveyors as to why that is the case. The advice section along with the phone numbers and dob section are the most important pieces of information that we want to collect in the survey. Anyone who does not perform the advice section properly will be penalized.
+
+```{r otherChecksAdviceSectionTiming, warning = FALSE}
+## Only looking at the timings for child 1 and pregnant mother
+dup_ds$advice_for_eligible_child1_start_time <- lubridate::ymd_hms(dup_ds$advice_for_eligible_child1_start_time)
+
+dup_ds$advice_for_eligible_child1_end_time <- lubridate::ymd_hms(dup_ds$advice_for_eligible_child1_end_time)
+
+dup_ds$message_for_pregnant_mother_start_time <- lubridate::ymd_hms(dup_ds$message_for_pregnant_mother_start_time)
+
+dup_ds$message_for_pregnant_mother_end_time <- lubridate::ymd_hms(dup_ds$message_for_pregnant_mother_end_time)
+
+grp_by_member_name_adv_sec_run_time <- group_by(dup_ds, member_name)
+summ_member_name_adv_sec_run_time <- dplyr::summarise(grp_by_member_name_adv_sec_run_time, avgRunTimeAdviceSectionChild1 = mean((advice_for_eligible_child1_end_time - advice_for_eligible_child1_start_time), na.rm = TRUE), avgRunTimeAdviceSectionPregMother = mean((message_for_pregnant_mother_end_time - message_for_pregnant_mother_start_time), na.rm = TRUE))
+
+# List of surveyors for which the average run time on advice section is less than 1 minute
+dup_ds_adv_ch1 <- filter(summ_member_name_adv_sec_run_time, avgRunTimeAdviceSectionChild1 < 60)
+dup_ds_adv_preg_moth <- filter(summ_member_name_adv_sec_run_time, avgRunTimeAdviceSectionPregMother < 60)
+
+# survList <- unique(append(dup_ds_adv_ch1$member_name, dup_ds_adv_preg_moth$member_name))
+survList <- unique(dup_ds_adv_ch1$member_name)
+
+survListIDIOnlyInd <- survList %in% teamMembers
+survList <- survList[survListIDIOnlyInd]
+survList
+```

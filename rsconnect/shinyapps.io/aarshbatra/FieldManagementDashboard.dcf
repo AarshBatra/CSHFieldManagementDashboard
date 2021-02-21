@@ -1,0 +1,12 @@
+name: FieldManagementDashboard
+title: FieldManagementDashboard
+username:
+account: aarshbatra
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 853484
+bundleId: 2416336
+url: https://aarshbatra.shinyapps.io/FieldManagementDashboard/
+when: 1568612470.62222
+asMultiple: FALSE
+asStatic: FALSE
